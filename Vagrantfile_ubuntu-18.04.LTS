@@ -1,0 +1,127 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# create an ubuntu 18.04 LTS VM box
+
+VAGRANTFILE_API_VERSION = "2"
+
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+
+	#######################################################
+	# My Variables
+	#######################################################
+	myvm_name = "ubuntu-18.04"
+	myvm_sync_dir = "C:/home/ws/VMs/#{myvm_name}"
+
+  
+	#######################################################
+	# Box Global
+	#######################################################
+	config.vm.box_check_update = false
+	config.vm.usable_port_range =	(2200..2250)
+
+
+	#######################################################
+	# VM Global
+	#######################################################
+	config.vm.define "#{myvm_name}" do |config|
+		config.vm.box       = "ubuntu/bionic64"
+		config.vm.hostname  = "#{myvm_name}"
+		config.vm.host_name = "#{myvm_name}"
+
+		#######################################################
+		# VM Network
+		#######################################################
+		config.vm.network :forwarded_port, guest: 22, host: 2222, id: "ssh", disabled: "true"
+		config.vm.network :forwarded_port, guest: 22, host: 2201, auto_correct: true
+		config.vm.network "public_network",
+							use_dhcp_assigned_default_route: true,
+							bridge: "Realtek PCIe GBE Family Controller",
+							#bridge: "Intel(R) Dual Band Wireless-AC 8260",
+							:mode => 'bridge',
+							auto_config: true
+
+		config.vm.synced_folder "#{myvm_sync_dir}", "/vagrant"
+
+
+		#######################################################
+		# VM Provider
+		#######################################################
+		config.vm.provider "virtualbox" do |vb|
+			vb.gui = false
+			vb.memory = 1024
+			vb.cpus = 1
+			vb.name = "vbox-#{myvm_name}"
+			vb.customize ["modifyvm", :id, "--usb", "on"]
+			vb.customize ["modifyvm", :id, "--usbehci", "on"]
+			vb.customize ["modifyvm", :id, "--usbxhci", "on"]
+			#vb.customize ["usbfilter",
+			#				"add", "0",
+			#				"--target", :id,
+			#				"--active", "yes",
+			#				"--name", "Prolific Technology Inc. USB-Serial Controller",
+			#				"--vendorid", "067b",
+			#				"--productid", "2303",
+			#				"--revision", "0300",
+			#				"--manufacturer", "Prolific Technology Inc.",
+			#				"--product", "USB-Serial Controller",
+			#				"--remote", "no"]
+		end
+
+
+		#######################################################
+		# Provision
+		#######################################################
+
+		config.vm.provision "shell", 
+			run: "never", 
+			inline: <<-INIT_CONFIG
+				echo "*** initial config ***"
+				export LANGUAGE=en_US.UTF-8
+				export LANG=en_US.UTF-8
+				export LC_ALL=en_US.UTF-8
+				locale-gen en_US.UTF-8
+				dpkg-reconfigure locales
+		INIT_CONFIG
+
+
+		config.vm.provision "shell", 
+			inline: <<-ENV_CONFIG
+				echo "*** config timezone ***"
+				sudo timedatectl set-ntp true
+				sudo timedatectl set-timezone 'Asia/Taipei'
+
+				echo "*** linking /bin/sh to bash instead of dash ***"
+				echo "dash dash/sh boolean false" | debconf-set-selections
+				DEBIAN_FRONTEND=noninteractive dpkg-reconfigure dash
+		ENV_CONFIG
+
+
+		config.vm.provision "shell", 
+			#run: "never",
+			inline: <<-PKG_INSTALL
+				echo "*** update apt-repository ***"
+				apt-get update -qq
+
+				echo "*** installing useful pkgs ***"
+				DEBIAN_FRONTEND=noninteractive \
+					apt-get install -y -qq --no-install-recommends \
+					lftp tree vim unzip git
+		PKG_INSTALL
+
+
+		config.vm.provision "shell", 
+			run: "always", 
+			inline: <<-CONFIG_DONE
+				echo ""
+				echo "*** ip address: $(ifconfig eth1 | awk '/inet addr/{print substr($2,6)}') ***"
+				echo ""
+		CONFIG_DONE
+
+
+		config.vm.post_up_message = <<-MESSAGE
+*** config.vm.was started :-) ***
+		MESSAGE
+
+	end # end VM Global
+end # end Vagrant.configure
